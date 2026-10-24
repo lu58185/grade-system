@@ -4,3 +4,7 @@
 *.pdb
 *.ilk
 .vs/
+
+# Python 运行时缓存（后端启动后自动生成，不属于源码）
+__pycache__/
+*.pyc

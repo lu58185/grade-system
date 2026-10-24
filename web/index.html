@@ -172,6 +172,9 @@
   <div id="content" data-page-node-id="VnBLZZw3SbQqAlZoBsHdMB"></div>
 </div>
 
+<!-- 隐藏的文件选择框：点表格里的"照片"按钮时，由 JS 打开它 -->
+<input type="file" id="photo-file" accept="image/jpeg,image/png" style="display:none">
+
 <!-- 静态模式下的数据来源；起了后端时不会用到它 -->
 <script src="data.js"></script>
 <script>
@@ -182,6 +185,41 @@
   var LIST = [];       // 当前要展示的学生
   var SUBS = [];       // 科目名
   var apiMode = false; // true = 连上了后端，可以增删改
+
+  // ---------- 照片上传 ----------
+  var photoInput = document.getElementById('photo-file');
+  var photoTargetId = null;   // 当前要给哪个学生传照片
+
+  photoInput.addEventListener('change', function () {
+    if (!photoInput.files || !photoInput.files.length) return;
+
+    var file = photoInput.files[0];
+    if (!/^image\/(jpeg|png)$/.test(file.type)) {
+      alert('只支持 jpg 或 png 图片');
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      alert('图片不能超过 3MB，先压缩一下再传');
+      return;
+    }
+
+    // 直接把文件的二进制当请求体发过去，服务端按 Content-Type 判断格式
+    fetch('/api/photos/' + encodeURIComponent(photoTargetId), {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: file
+    }).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) throw new Error(d.error || ('上传失败 ' + r.status));
+        return d;
+      });
+    }).then(function () {
+      CACHE_VER = Date.now();   // 地址加时间戳，浏览器才会重新拉新图
+      reload();
+    }).catch(function (e) {
+      alert('上传失败：' + e.message);
+    });
+  });
 
   // ---------- 基础计算 ----------
   function totalOf(s) {
@@ -200,6 +238,13 @@
     return COLORS[h % COLORS.length];
   }
 
+  // 上传新照片后要让浏览器重新拉图，否则它会一直显示缓存里的旧照片。
+  // 做法是在图片地址后面加个 ?v=时间戳，地址变了浏览器就当成新文件。
+  var CACHE_VER = 0;
+  function photoUrl(id, ext) {
+    return 'photos/' + id + ext + (CACHE_VER ? '?v=' + CACHE_VER : '');
+  }
+
   // 生成头像：优先 photos/学号.jpg，其次 .png，都没有就显示姓氏首字
   // 注意不写内联 onload/onerror，改由 bindAvatars 统一绑定（有些预览环境会过滤内联事件）
   function avatarHtml(id, name, size) {
@@ -210,7 +255,7 @@
       '</div>' +
       '<img class="avatar" data-id="' + id + '"' +
         ' style="width:' + size + 'px;height:' + size + 'px"' +
-        ' src="photos/' + id + '.jpg" alt="">' +
+        ' src="' + photoUrl(id, '.jpg') + '" alt="">' +
       '</div>';
   }
 
@@ -222,7 +267,7 @@
         var retried = false;
         img.addEventListener('load', function () { img.classList.add('ok'); });
         img.addEventListener('error', function () {
-          if (!retried) { retried = true; img.src = 'photos/' + id + '.png'; }
+          if (!retried) { retried = true; img.src = photoUrl(id, '.png'); }
           else if (img.parentNode) img.parentNode.removeChild(img);
         });
         if (img.complete && img.naturalWidth > 0) img.classList.add('ok');
@@ -346,7 +391,8 @@
       html += '<td class="num">' + totalOf(s) + '</td>' +
         '<td class="num">' + fix1(avgOf(s)) + '</td>';
       if (apiMode) {
-        html += '<td>' +
+        html += '<td style="white-space:nowrap">' +
+          '<button class="btn-mini" data-act="photo" data-id="' + s.id + '">照片</button>' +
           '<button class="btn-mini" data-act="edit" data-id="' + s.id + '">编辑</button>' +
           '<button class="btn-mini danger" data-act="del" data-id="' + s.id + '">删除</button>' +
           '</td>';
@@ -458,7 +504,7 @@
     });
   }
 
-  // 表格里的"编辑""删除"用事件委托：只绑一次，点击时再看点到了哪个按钮
+  // 表格里的"照片""编辑""删除"用事件委托：只绑一次，点击时再看点到了哪个按钮
   box.addEventListener('click', function (ev) {
     if (!apiMode) return;
     var btn = ev.target.closest ? ev.target.closest('button[data-act]') : null;
@@ -471,7 +517,17 @@
     }
     if (!stu) return;
 
-    if (btn.getAttribute('data-act') === 'del') {
+    var act = btn.getAttribute('data-act');
+
+    // 上传照片：记下是谁，然后打开隐藏的文件选择框
+    if (act === 'photo') {
+      photoTargetId = id;
+      photoInput.value = '';        // 清空，保证同一个文件再选一次也能触发 change
+      photoInput.click();
+      return;
+    }
+
+    if (act === 'del') {
       if (!confirm('确定删除 ' + stu.name + '（' + stu.id + '）吗？会写入文件。')) return;
       api('DELETE', '/api/students/' + encodeURIComponent(id))
         .then(reload)

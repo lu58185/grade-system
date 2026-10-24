@@ -29,7 +29,8 @@ WEB_DIR = os.path.join(BASE_DIR, "web")         # 前端文件所在目录
 DATA_FILE = os.path.join(BASE_DIR, "students.txt")
 
 SUBJECTS = ["数学", "英语", "C++"]
-PORT = 8000
+# 默认 8000；设置环境变量 PORT 可以换端口（比如 8000 被别的程序占用时）
+PORT = int(os.environ.get("PORT", "8000"))
 
 
 # ---------- 数据读写 ----------
@@ -145,9 +146,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    # ---------- POST：添加 ----------
+    # ---------- POST：添加学生 / 上传照片 ----------
     def do_POST(self):
         path = urlparse(self.path).path
+
+        # 上传照片：POST /api/photos/<学号>，请求体是图片的原始二进制
+        if path.startswith("/api/photos/"):
+            self.handle_upload(unquote(path[len("/api/photos/"):]))
+            return
+
         if path != "/api/students":
             self.err(404, "接口不存在")
             return
@@ -177,6 +184,51 @@ class Handler(BaseHTTPRequestHandler):
         save_students(students)
         self.quiet_log()
         self.send_json({"ok": True, "students": students}, 201)
+
+    # ---------- 照片上传 ----------
+    def handle_upload(self, sid):
+        # 1. 学生必须存在，否则不知道照片该挂给谁
+        students = load_students()
+        if not any(s["id"] == sid for s in students):
+            self.err(404, f"找不到学号 {sid}")
+            return
+
+        # 2. 只收 jpg / png
+        ctype = (self.headers.get("Content-Type") or "").lower().split(";")[0].strip()
+        ext_map = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png"}
+        if ctype not in ext_map:
+            self.err(400, "只支持 jpg 或 png 图片")
+            return
+        ext = ext_map[ctype]
+
+        # 3. 限制大小，防止传个几十兆的文件把磁盘塞满
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = 0
+        if length <= 0:
+            self.err(400, "没有收到图片数据")
+            return
+        if length > 3 * 1024 * 1024:
+            self.err(413, "图片不能超过 3MB")
+            return
+
+        data = self.rfile.read(length)
+
+        # 4. 落盘：先把同一个人旧的 .jpg/.png 删掉，避免新旧两张同时存在
+        photos_dir = os.path.join(WEB_DIR, "photos")
+        os.makedirs(photos_dir, exist_ok=True)
+        for old in (".jpg", ".png"):
+            old_path = os.path.join(photos_dir, sid + old)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        filename = sid + ext
+        with open(os.path.join(photos_dir, filename), "wb") as f:
+            f.write(data)
+
+        self.quiet_log()
+        self.send_json({"ok": True, "file": filename, "size": len(data)}, 201)
 
     # ---------- PUT：修改 ----------
     def do_PUT(self):
@@ -232,6 +284,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"ok": True, "students": remain})
 
 
+class Server(ThreadingHTTPServer):
+    """Windows 下必须关掉地址复用。
+
+    默认的 HTTPServer 开了 SO_REUSEADDR，在 Windows 上它的含义是
+    「允许别的进程抢同一个端口」——端口被占了也照样"绑定成功"，
+    结果两个进程抢一个端口，网页时好时坏，极难排查。
+    """
+    allow_reuse_address = (os.name != "nt")
+
+
 def main():
     print("=" * 46)
     print("  学生成绩管理系统 · 后端服务")
@@ -242,7 +304,17 @@ def main():
     print("  停止服务：按 Ctrl + C")
     print("=" * 46)
 
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        server = Server(("127.0.0.1", PORT), Handler)
+    except OSError:
+        print()
+        print("  [错误] 端口 %d 已被占用，通常说明已经有一个服务在跑。" % PORT)
+        print("  办法：先找到那个黑窗口按 Ctrl+C 关掉，再重新运行本脚本。")
+        print("  或者换端口：set PORT=8001 然后重新运行，浏览器改访问 http://localhost:8001")
+        print()
+        input("按回车退出...")
+        return
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
