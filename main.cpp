@@ -344,9 +344,17 @@ void addStudent(vector<Student>& list) {
 
     for (int i = 0; i < SUBJECT_COUNT; i++) {
         while (true) {
-            cout << SUBJECT_NAMES[i] << "成绩: ";
-            if (readDouble(s.scores[i])) break;
-            cout << "[错误] 请输入数字。\n";
+            cout << SUBJECT_NAMES[i] << "成绩（0~100）: ";
+            if (!readDouble(s.scores[i])) {
+                cout << "[错误] 请输入数字。\n";
+                continue;
+            }
+            // 范围必须自己查：填个 999 会直接把班级平均分、最高分全带歪
+            if (s.scores[i] < 0 || s.scores[i] > 100) {
+                cout << "[错误] 成绩必须在 0 到 100 之间。\n";
+                continue;
+            }
+            break;
         }
     }
 
@@ -392,10 +400,18 @@ void editStudent(vector<Student>& list) {
         cout << "新" << SUBJECT_NAMES[i] << "成绩（输入 -1 表示不改）: ";
         double v;
         while (true) {
-            if (readDouble(v)) break;
-            cout << "[错误] 请输入数字。\n";
+            if (!readDouble(v)) {
+                cout << "[错误] 请输入数字。\n";
+                continue;
+            }
+            if (v == -1) break;                 // -1 是"跳过"的暗号，不是成绩
+            if (v < 0 || v > 100) {
+                cout << "[错误] 成绩必须在 0 到 100 之间。\n";
+                continue;
+            }
+            list[idx].scores[i] = v;
+            break;
         }
-        if (v >= 0) list[idx].scores[i] = v;
     }
 
     saveToFile(list);
