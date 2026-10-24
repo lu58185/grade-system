@@ -155,7 +155,7 @@ grade-system/
 │   └── 启动服务.bat     双击启动
 └── web/
     ├── index.html      成绩看板页面
-    ├── data.js         由 C++ 自动生成的数据（静态模式下用）
+    ├── data.js         自动生成的数据（C++ 导出或后端同步），静态模式下用
     └── photos/         学生照片，文件名用学号（2026001.jpg / .png）
 ```
 
@@ -212,6 +212,7 @@ https://lu58185.github.io/grade-system/
 - `sort` + lambda 表达式做排名
 - `ofstream` / `ifstream` 文件读写（存档 + 导出）
 - 输入流状态处理（`cin.clear()` / `cin.ignore()`）
+- **数据同步**：后端每次写 `students.txt` 都顺手重写 `web/data.js`，静态版（GitHub Pages）不会停在旧数据上
 - **HTTP 服务端**：Python 标准库 `http.server`，自己解析路径和 JSON，不用任何框架
 - **REST 风格接口**：GET / POST / PUT / DELETE 对应查 / 增 / 改 / 删
 - **前端异步请求**：`fetch` 取数据，改完重新拉取刷新页面

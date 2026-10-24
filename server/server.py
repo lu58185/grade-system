@@ -71,6 +71,28 @@ def save_students(students):
             f.write(f'{s["id"]} {s["name"]} {scores}\n')
     os.replace(tmp, DATA_FILE)
 
+    # 顺手把静态数据也刷新一遍：网页上改完，推到 GitHub Pages 的版本才是新的。
+    # 不刷的话线上那份会一直是老数据，别人打开你的链接看到的是旧的。
+    write_static_data(students)
+
+
+def write_static_data(students):
+    """生成 web/data.js，格式和 C++ 程序导出的完全一致（谁先跑都不会互相打架）。"""
+    path = os.path.join(WEB_DIR, "data.js")
+    lines = ["// 本文件由程序自动生成，请勿手改", "var STUDENTS = ["]
+    for i, s in enumerate(students):
+        scores = ", ".join(format_num(v) for v in s["scores"])
+        line = f'  {{ id: "{s["id"]}", name: "{s["name"]}", scores: [{scores}] }}'
+        lines.append(line + ("," if i < len(students) - 1 else ""))
+    lines.append("];")
+    subs = ", ".join(f'"{x}"' for x in SUBJECTS)
+    lines.append(f"var SUBJECTS = [{subs}];")
+
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, path)
+
 
 def parse_scores(raw):
     """把请求里的成绩清洗成 float 列表；不合法就抛 ValueError，消息直接给用户看。
@@ -379,6 +401,13 @@ def main():
     print(f"  打开地址：http://localhost:{PORT}")
     print("  停止服务：按 Ctrl + C")
     print("=" * 46)
+
+    # 启动时把静态数据对齐一次：万一之前是 C++ 改的数据，data.js 也能跟上
+    try:
+        write_static_data(load_students())
+        print("  [已同步] web/data.js")
+    except Exception as e:
+        print(f"  [警告] 同步 data.js 失败：{e}")
 
     try:
         server = Server(("127.0.0.1", PORT), Handler)

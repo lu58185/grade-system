@@ -453,7 +453,7 @@ void exportData(const vector<Student>& list) {
     // 为什么不是 json？浏览器用 file:// 打开网页时读 json 会被 CORS 拦，
     // 而 <script src="data.js"> 不受限制，这是不用起服务器的最简方案。
     ofstream js("web/data.js");
-    js << "// 本文件由 C++ 程序自动生成，请勿手改\n";
+    js << "// 本文件由程序自动生成，请勿手改\n";
     js << "var STUDENTS = [\n";
     for (int i = 0; i < (int)list.size(); i++) {
         const Student& s = list[i];
