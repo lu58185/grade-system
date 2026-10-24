@@ -35,6 +35,8 @@
   .panel {
     background: #fff; border-radius: 10px; padding: 22px 24px; margin-bottom: 24px;
     box-shadow: 0 1px 3px rgba(0,0,0,.06); border: 1px solid #eef0f4;
+    /* 明细表加了操作按钮后列变多，窄屏时允许横向滚动，别把布局撑破 */
+    overflow-x: auto;
   }
   .panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #374151; }
   .panel .hint { font-size: 12px; color: #9ca3af; margin-bottom: 18px; }
