@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-page-node-id="5Ubk0qHrRaVRz1tFW5yHGu">
-<head data-page-node-id="g8vtrKBM5phifJDTsZkLk4">
-<meta charset="UTF-8" data-page-node-id="wjRJfPRdLFKAVtXDgGEDtF">
+<html lang="zh-CN" data-page-node-id="tt9y1ug9q3Ri15TY7obCQA">
+<head data-page-node-id="yAFVOxOFV0kr4xeQldfxCE">
+<meta charset="UTF-8" data-page-node-id="U4oRCRF0GpNvCzWBhcypUO">
 <title>学生成绩看板</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,12 +12,12 @@
     padding: 32px 20px;
     line-height: 1.6;
   }
-  .wrap { max-width: 1000px; margin: 0 auto; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
 
   h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
   .sub { color: #6b7280; font-size: 13px; margin-bottom: 24px; }
 
-  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
   .card {
     background: #fff; border-radius: 10px; padding: 18px 20px;
     box-shadow: 0 1px 3px rgba(0,0,0,.06); border: 1px solid #eef0f4;
@@ -30,8 +30,31 @@
     background: #fff; border-radius: 10px; padding: 22px 24px; margin-bottom: 24px;
     box-shadow: 0 1px 3px rgba(0,0,0,.06); border: 1px solid #eef0f4;
   }
-  .panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #374151; }
+  .panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #374151; }
+  .panel .hint { font-size: 12px; color: #9ca3af; margin-bottom: 18px; }
 
+  /* ---------- 前十榜 ---------- */
+  .board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .board-card {
+    position: relative;
+    background: #fafbfc; border: 1px solid #eef0f4; border-radius: 10px;
+    padding: 18px 10px 14px; text-align: center;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .board-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.07); }
+
+  .board-rank {
+    position: absolute; top: 8px; left: 10px;
+    font-size: 12px; font-weight: 700; color: #9ca3af;
+  }
+
+  .board-ava { display: flex; justify-content: center; margin: 6px 0 10px; }
+  .board-name { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 2px; }
+  .board-id { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+  .board-avg { font-size: 20px; font-weight: 700; color: #2563eb; font-variant-numeric: tabular-nums; }
+  .board-avg small { font-size: 11px; font-weight: 400; color: #9ca3af; margin-left: 2px; }
+
+  /* ---------- 明细表 ---------- */
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th {
     text-align: left; padding: 10px 12px; font-weight: 500; font-size: 12px;
@@ -53,6 +76,7 @@
   .r2 { background: #e5e7eb; color: #374151; font-weight: 600; }
   .r3 { background: #fed7aa; color: #9a3412; font-weight: 600; }
 
+  /* ---------- 条形图 ---------- */
   .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
   .bar-name { width: 70px; font-size: 13px; color: #374151; flex-shrink: 0; text-align: right; }
   .bar-track { flex: 1; height: 22px; background: #f3f4f6; border-radius: 5px; overflow: hidden; }
@@ -64,17 +88,36 @@
     transition: width .6s ease;
   }
 
+  /* ---------- 头像（表格和榜单共用） ---------- */
+  .avatar-wrap { position: relative; display: inline-block; }
+  .avatar-fb {
+    position: absolute; inset: 0; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 500;
+  }
+  img.avatar {
+    position: absolute; inset: 0; border-radius: 50%;
+    object-fit: cover; opacity: 0;
+    border: 1px solid #e5e7eb; background: #fff;
+  }
+  img.avatar.ok { opacity: 1; }
+
   .empty { text-align: center; padding: 40px 20px; color: #9ca3af; font-size: 14px; }
   .empty code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #4b5563; }
   .footer { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 8px; }
+
+  /* 屏幕窄的时候自动换行 */
+  @media (max-width: 860px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .board { grid-template-columns: repeat(3, 1fr); }
+  }
 </style>
 </head>
-<body data-page-node-id="zXx4Za7ILUBEaVBbSHVTRk">
-<div class="wrap" data-page-node-id="LnRoBgCCBgnRnHCjd99afJ">
-  <h1 data-page-node-id="d4uPXlBXBC2EQGh8bM9M8V">学生成绩看板</h1>
-  <p class="sub" data-page-node-id="9FgcLKiVNT8g6wMH5xKkTp">数据来源：C++ 程序导出的 data.js</p>
-
-  <div id="content" data-page-node-id="1Mdiq9CfAjP338EzzRAiQG"></div>
+<body data-page-node-id="1kicX5kJLBzufcn2TouAIz">
+<div class="wrap" data-page-node-id="3EVVlVXCopm1vCfsmoeiZC">
+  <h1 data-page-node-id="PdJC7RCfqXFkCXF9COerDQ">学生成绩看板</h1>
+  <p class="sub" data-page-node-id="3KUepTlGmDRmca3HKA0JpL">数据来源：C++ 程序导出的 data.js</p>
+  <div id="content" data-page-node-id="3XZhWNXEurbZWHEy0MzWiV"></div>
 </div>
 
 <!-- 这一行就是"网页读取 C++ 数据"的关键 -->
@@ -88,7 +131,7 @@
     box.innerHTML =
       '<div class="panel"><div class="empty">' +
       '还没有数据。<br><br>' +
-      '打开 <code>run.bat</code> → 选 <code>1</code> 添加几个学生 → 选 <code>4</code> 导出，<br>' +
+      '打开 <code>run.bat</code> → 选 <code>1</code> 添加几个学生 → 选 <code>9</code> 导出，<br>' +
       '然后刷新本页即可看到图表。' +
       '</div></div>';
     return;
@@ -103,8 +146,9 @@
     return t;
   }
   function avgOf(s) { return totalOf(s) / N; }
+  function fix1(x) { return x.toFixed(1); }
 
-  // 按平均分从高到低排
+  // 按平均分从高到低排（复制一份，不动原数组）
   var ranked = STUDENTS.slice().sort(function (a, b) { return avgOf(b) - avgOf(a); });
 
   // 概览数字
@@ -115,9 +159,58 @@
     if (avgOf(s) >= 60) passCount++;
   });
   classAvg = classAvg / STUDENTS.length;
-  var passRate = (passCount / STUDENTS.length * 100);
+  var passRate = passCount / STUDENTS.length * 100;
 
-  function fix1(x) { return x.toFixed(1); }
+  // ---------- 头像工具 ----------
+  // 占位色：按学号算一个稳定的颜色，同一个人每次刷新颜色不变
+  var COLORS = ['#93c5fd', '#fca5a5', '#86efac', '#fcd34d', '#c4b5fd', '#f9a8d4'];
+  function colorOf(id) {
+    var h = 0;
+    for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
+    return COLORS[h % COLORS.length];
+  }
+
+  // 生成一个头像：优先显示 photos/学号.jpg（或 .png），没有就显示姓氏首字
+  // 注意：这里故意不写 onload/onerror 属性，改成渲染完统一用 JS 绑定。
+  // 因为有些预览环境会过滤掉内联事件，导致图片加载成功却永远保持透明。
+  function avatarHtml(id, name, size) {
+    var fs = Math.round(size * 0.42);
+    return '<div class="avatar-wrap" style="width:' + size + 'px;height:' + size + 'px">' +
+      '<div class="avatar-fb" style="background:' + colorOf(id) + ';font-size:' + fs + 'px">' +
+        name.charAt(0) +
+      '</div>' +
+      '<img class="avatar" data-id="' + id + '"' +
+        ' style="width:' + size + 'px;height:' + size + 'px"' +
+        ' src="photos/' + id + '.jpg" alt="">' +
+      '</div>';
+  }
+
+  // 给所有头像挂上加载/失败处理
+  function bindAvatars(root) {
+    var imgs = root.querySelectorAll('img.avatar');
+    for (var k = 0; k < imgs.length; k++) {
+      (function (img) {
+        var id = img.getAttribute('data-id');
+        var retried = false;
+
+        img.addEventListener('load', function () {
+          img.classList.add('ok');          // 加载成功 → 显示照片
+        });
+
+        img.addEventListener('error', function () {
+          if (!retried) {                    // 第一次失败 → 试试 .png
+            retried = true;
+            img.src = 'photos/' + id + '.png';
+          } else {                           // 还没有 → 删掉，露出首字头像
+            if (img.parentNode) img.parentNode.removeChild(img);
+          }
+        });
+
+        // 图片可能已经在缓存里，事件不会再触发，这里补一次判断
+        if (img.complete && img.naturalWidth > 0) img.classList.add('ok');
+      })(imgs[k]);
+    }
+  }
 
   // ---------- 概览卡片 ----------
   var html = '<div class="cards">' +
@@ -127,15 +220,36 @@
     '<div class="card"><div class="label">及格率</div><div class="value">' + fix1(passRate) + '<small>%</small></div></div>' +
     '</div>';
 
+  // ---------- 前十榜 ----------
+  var topN = ranked.slice(0, 10);       // 最多取前 10 名
+  html += '<div class="panel"><h2>成绩前十榜</h2>' +
+    '<p class="hint">共 ' + topN.length + ' 人上榜（最多显示 10 名）</p>' +
+    '<div class="board">';
+
+  topN.forEach(function (s, i) {
+    html += '<div class="board-card">' +
+      '<div class="board-rank">第 ' + (i + 1) + ' 名</div>' +
+      '<div class="board-ava">' + avatarHtml(s.id, s.name, 64) + '</div>' +
+      '<div class="board-name">' + s.name + '</div>' +
+      '<div class="board-id">' + s.id + '</div>' +
+      '<div class="board-avg">' + fix1(avgOf(s)) + '<small>分</small></div>' +
+      '</div>';
+  });
+  html += '</div></div>';
+
   // ---------- 成绩明细表 ----------
-  html += '<div class="panel"><h2>成绩明细（按平均分排序）</h2><table><thead><tr>' +
-    '<th style="width:56px">名次</th><th>学号</th><th>姓名</th>';
+  html += '<div class="panel"><h2>成绩明细（按平均分排序）</h2>' +
+    '<p class="hint">照片放在 web/photos/ 文件夹，文件名用学号（如 2026001.jpg）</p>' +
+    '<table><thead><tr>' +
+    '<th style="width:56px">名次</th><th style="width:52px">照片</th><th>学号</th><th>姓名</th>';
   SUBJECTS.forEach(function (name) { html += '<th class="num">' + name + '</th>'; });
   html += '<th class="num">总分</th><th class="num">平均分</th></tr></thead><tbody>';
 
   ranked.forEach(function (s, i) {
     var cls = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : '';
-    html += '<tr><td><span class="rank-badge ' + cls + '">' + (i + 1) + '</span></td>' +
+    html += '<tr>' +
+      '<td><span class="rank-badge ' + cls + '">' + (i + 1) + '</span></td>' +
+      '<td>' + avatarHtml(s.id, s.name, 34) + '</td>' +
       '<td>' + s.id + '</td><td>' + s.name + '</td>';
     s.scores.forEach(function (v) { html += '<td class="num">' + v + '</td>'; });
     html += '<td class="num">' + totalOf(s) + '</td>' +
@@ -143,8 +257,8 @@
   });
   html += '</tbody></table></div>';
 
-  // ---------- 平均分条形图 ----------
-  html += '<div class="panel"><h2>平均分对比</h2>';
+  // ---------- 平均分对比 ----------
+  html += '<div class="panel"><h2>平均分对比</h2><div style="margin-top:14px">';
   var maxAvg = avgOf(ranked[0]);
   ranked.forEach(function (s) {
     var w = maxAvg > 0 ? (avgOf(s) / maxAvg * 100) : 0;
@@ -153,11 +267,12 @@
       '<div class="bar-track"><div class="bar-fill" style="width:' + w + '%">' + fix1(avgOf(s)) + '</div></div>' +
       '</div>';
   });
-  html += '</div>';
+  html += '</div></div>';
 
   html += '<p class="footer">共 ' + STUDENTS.length + ' 名学生 · ' + N + ' 门科目</p>';
 
   box.innerHTML = html;
+  bindAvatars(box);          // 渲染完立刻处理照片加载
 })();
 </script>
 </body>

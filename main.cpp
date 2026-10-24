@@ -116,6 +116,96 @@ void printRanking(const vector<Student>& list) {
     }
 }
 
+// ---------- 5.1 选科目（4、5 两个功能共用）----------
+// 让用户选一门课，返回它的下标 0..SUBJECT_COUNT-1；用户放弃则返回 -1
+int chooseSubject() {
+    cout << "\n选择科目：\n";
+    for (int i = 0; i < SUBJECT_COUNT; i++) {
+        cout << "  " << (i + 1) << ". " << SUBJECT_NAMES[i] << "\n";
+    }
+    cout << "科目编号: ";
+
+    int n = 0;
+    if (!readInt(n)) return -1;
+    if (n < 1 || n > SUBJECT_COUNT) return -1;
+    return n - 1;
+}
+
+// ---------- 5.2 单科排名 ----------
+void printSubjectRanking(const vector<Student>& list) {
+    if (list.empty()) {
+        cout << "\n[提示] 目前还没有学生。\n";
+        return;
+    }
+
+    int sub = chooseSubject();
+    if (sub == -1) {
+        cout << "[错误] 科目编号无效。\n";
+        return;
+    }
+
+    // 和总排名一样的套路，只是比较的字段换了
+    vector<Student> sorted = list;
+    sort(sorted.begin(), sorted.end(), [sub](const Student& a, const Student& b) {
+        return a.scores[sub] > b.scores[sub];      // [sub] 把科目带进 lambda
+    });
+
+    cout << "\n===== " << SUBJECT_NAMES[sub] << " 单科排名 =====\n";
+    for (int i = 0; i < (int)sorted.size(); i++) {
+        printOne(sorted[i], i + 1);
+    }
+}
+
+// ---------- 5.3 按分数筛选 ----------
+void filterByScore(const vector<Student>& list) {
+    if (list.empty()) {
+        cout << "\n[提示] 目前还没有学生。\n";
+        return;
+    }
+
+    int sub = chooseSubject();
+    if (sub == -1) {
+        cout << "[错误] 科目编号无效。\n";
+        return;
+    }
+
+    cout << "\n筛选方式：\n";
+    cout << "  1. 高于或等于某个分数\n";
+    cout << "  2. 低于某个分数\n";
+    cout << "选择: ";
+    int mode = 0;
+    if (!readInt(mode) || (mode != 1 && mode != 2)) {
+        cout << "[错误] 只能输入 1 或 2。\n";
+        return;
+    }
+
+    cout << "分数: ";
+    double line = 0;
+    if (!readDouble(line)) {
+        cout << "[错误] 请输入数字。\n";
+        return;
+    }
+
+    int count = 0;
+    cout << "\n===== " << SUBJECT_NAMES[sub];
+    // 这里必须加 fixed，否则 80 会被输出成科学计数法 8e+01
+    if (mode == 1) cout << " >= " << fixed << setprecision(0) << line;
+    else           cout << " < "  << fixed << setprecision(0) << line;
+    cout << " 的学生 =====\n";
+
+    for (int i = 0; i < (int)list.size(); i++) {
+        bool hit = (mode == 1) ? (list[i].scores[sub] >= line)
+                               : (list[i].scores[sub] <  line);
+        if (hit) {
+            count++;
+            printOne(list[i], count);
+        }
+    }
+
+    if (count == 0) cout << "  没有符合条件的学生。\n";
+    else            cout << "共 " << count << " 人\n";
+}
+
 // ---------- 6. 班级统计 ----------
 void printStats(const vector<Student>& list) {
     if (list.empty()) {
@@ -160,6 +250,34 @@ void printStats(const vector<Student>& list) {
         cout << "  " << SUBJECT_NAMES[j] << " " << setprecision(1) << (sum / list.size());
     }
     cout << endl;
+
+    // ---- 分数区间分布（按平均分划分）----
+    // 数组的每个格子对应一个档位的计数：
+    //   [0] 优秀 >=90   [1] 良好 80-89   [2] 中等 70-79
+    //   [3] 及格 60-69  [4] 不及格 <60
+    // 注意：标签故意不用 setw 补空格（中文字符宽度不一样，对不齐），
+    // 而是靠"前四档补两个空格"来手工对齐，因为"不及格"比它们多一个汉字。
+    string labels[5] = {"优秀", "良好", "中等", "及格", "不及格"};
+    string ranges[5] = {">=90", "80-89", "70-79", "60-69", "<60"};
+    int buckets[5] = {0, 0, 0, 0, 0};
+
+    for (int i = 0; i < (int)list.size(); i++) {
+        double avg = average(list[i]);
+        if      (avg >= 90) buckets[0]++;
+        else if (avg >= 80) buckets[1]++;
+        else if (avg >= 70) buckets[2]++;
+        else if (avg >= 60) buckets[3]++;
+        else                buckets[4]++;
+    }
+
+    cout << "\n  平均分分布：\n";
+    for (int k = 0; k < 5; k++) {
+        cout << "    " << labels[k];
+        if (k < 4) cout << "  ";        // 前四档标签少一个字，补两个空格对齐
+        cout << "  " << ranges[k] << "   " << buckets[k] << " 人   ";
+        for (int c = 0; c < buckets[k]; c++) cout << "█";   // 简易条形图
+        cout << "\n";
+    }
 }
 
 // ---------- 7. 文件读写（数据持久化）----------
@@ -237,14 +355,14 @@ void addStudent(vector<Student>& list) {
     cout << "[成功] 已添加 " << s.name << "（自动保存）\n";
 }
 
-// ---------- 10. 修改 ----------
+// ---------- 10. 修改（姓名 + 成绩）----------
 void editStudent(vector<Student>& list) {
     if (list.empty()) {
         cout << "\n[提示] 没有学生可修改。\n";
         return;
     }
 
-    cout << "\n--- 修改成绩 ---\n";
+    cout << "\n--- 修改学生信息 ---\n";
     cout << "要修改的学号: ";
     string id;
     cin >> id;
@@ -255,9 +373,21 @@ void editStudent(vector<Student>& list) {
         return;
     }
 
-    cout << "找到了：" << list[idx].name << "，当前成绩：\n";
+    cout << "找到了：" << list[idx].name << "（" << list[idx].id << "），当前信息：\n";
     printOne(list[idx], 0);
 
+    // --- 改姓名 ---
+    // 学号不开放修改：它既是查找的钥匙，也是网页找照片的文件名。
+    // 真要改学号，请删除后重新添加（顺便避免出现两个同号记录）。
+    cout << "\n新姓名（输入 - 表示不改）: ";
+    string newName;
+    cin >> newName;
+    if (newName != "-") {
+        cout << "姓名：" << list[idx].name << " -> " << newName << "\n";
+        list[idx].name = newName;
+    }
+
+    // --- 改成绩 ---
     for (int i = 0; i < SUBJECT_COUNT; i++) {
         cout << "新" << SUBJECT_NAMES[i] << "成绩（输入 -1 表示不改）: ";
         double v;
@@ -367,11 +497,13 @@ int main() {
         cout << "\n========== 学生成绩管理系统 ==========\n";
         cout << "  1. 添加学生\n";
         cout << "  2. 查看全部\n";
-        cout << "  3. 查看排名\n";
-        cout << "  4. 修改成绩\n";
-        cout << "  5. 删除学生\n";
-        cout << "  6. 班级统计\n";
-        cout << "  7. 导出到网页\n";
+        cout << "  3. 总排名（按平均分）\n";
+        cout << "  4. 单科排名\n";
+        cout << "  5. 按分数筛选\n";
+        cout << "  6. 修改成绩\n";
+        cout << "  7. 删除学生\n";
+        cout << "  8. 班级统计\n";
+        cout << "  9. 导出到网页\n";
         cout << "  0. 退出\n";
         cout << "======================================\n";
         cout << "请选择: ";
@@ -388,12 +520,16 @@ int main() {
         } else if (choice == 3) {
             printRanking(list);
         } else if (choice == 4) {
-            editStudent(list);
+            printSubjectRanking(list);
         } else if (choice == 5) {
-            deleteStudent(list);
+            filterByScore(list);
         } else if (choice == 6) {
-            printStats(list);
+            editStudent(list);
         } else if (choice == 7) {
+            deleteStudent(list);
+        } else if (choice == 8) {
+            printStats(list);
+        } else if (choice == 9) {
             if (list.empty()) {
                 cout << "\n[提示] 没有数据可导出。\n";
             } else {
@@ -404,7 +540,7 @@ int main() {
             cout << "\n已保存 " << list.size() << " 条记录到 " << DATA_FILE << "，退出。\n";
             break;
         } else {
-            cout << "\n[错误] 只能输入 0-7。\n";
+            cout << "\n[错误] 只能输入 0-9。\n";
         }
     }
 
