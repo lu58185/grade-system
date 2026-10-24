@@ -25,6 +25,19 @@
   /* 页面版本标记：刷新后能一眼看出浏览器拿到的是不是最新页面，不受缓存欺骗 */
   .build-tag { font-size: 11px; color: #b0b7c3; margin-left: 10px; }
 
+  /* 工具栏：搜索 + 导出 */
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .toolbar input[type="search"] {
+    width: 240px; padding: 7px 12px; font-size: 13px; font-family: inherit;
+    color: #374151; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 8px; outline: none; transition: border-color .15s ease;
+  }
+  .toolbar input[type="search"]:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(147,197,253,.18); }
+  .toolbar .qhint { font-size: 12px; color: #9ca3af; }
+
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
   .card {
     background: #fff; border-radius: 10px; padding: 18px 20px;
@@ -159,6 +172,7 @@
   img.avatar.ok { opacity: 1; }
 
   .empty { text-align: center; padding: 40px 20px; color: #9ca3af; font-size: 14px; }
+  .empty-cell { text-align: center; padding: 28px 12px; color: #9ca3af; font-size: 13px; }
   .empty code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #4b5563; }
   .footer { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 8px; }
 
@@ -173,6 +187,15 @@
   <h1 data-page-node-id="ngWPxnFrjM0jcFgwCWG4Ul">学生成绩看板</h1>
   <p class="sub" data-page-node-id="rbQAEdfEjuYhYTfgtSgqvJ">数据来源：C++ 程序导出的 data.js，或本地后端的实时数据</p>
   <div id="status" data-page-node-id="QS9AxDFvhHGY53ewkCTD6v"></div>
+
+  <!-- 工具栏放在 #content 外面：重渲染表格时它不会跟着被销毁，
+       输入框也就不会丢焦点、不会每敲一个字光标就跳走 -->
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="搜学号或姓名（只筛明细表）" autocomplete="off">
+    <button class="btn-mini" id="export" type="button">导出 CSV</button>
+    <span class="qhint" id="qhint"></span>
+  </div>
+
   <div id="content" data-page-node-id="VnBLZZw3SbQqAlZoBsHdMB"></div>
 </div>
 
@@ -189,6 +212,39 @@
   var LIST = [];       // 当前要展示的学生
   var SUBS = [];       // 科目名
   var apiMode = false; // true = 连上了后端，可以增删改
+  var FILTER = '';     // 明细表的搜索关键词（只影响表格，不影响统计卡片）
+
+  // ---------- 工具栏：搜索 / 导出 CSV ----------
+  var qInput = document.getElementById('q');
+  var qHint = document.getElementById('qhint');
+  var exportBtn = document.getElementById('export');
+
+  qInput.addEventListener('input', function () {
+    FILTER = qInput.value;
+    render();
+  });
+
+  exportBtn.addEventListener('click', function () {
+    var rows = filteredRows();
+    if (!rows.length) { alert('当前没有可导出的数据'); return; }
+
+    // Excel 打开中文 CSV 需要 BOM，否则全是乱码
+    var lines = ['学号,姓名,' + SUBS.join(',') + ',总分,平均分'];
+    rows.forEach(function (s) {
+      lines.push([s.id, s.name].concat(s.scores.map(function (v) { return v; }))
+        .concat([totalOf(s), fix1(avgOf(s))]).join(','));
+    });
+    var blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '成绩表_' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // 释放掉这个临时地址，否则页面开着越久占的内存越多
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
 
   // ---------- 照片上传 ----------
   var photoInput = document.getElementById('photo-file');
@@ -233,6 +289,28 @@
   }
   function avgOf(s) { return totalOf(s) / s.scores.length; }
   function fix1(x) { return x.toFixed(1); }
+
+  // ---------- 排序 / 筛选 ----------
+  function rankedAll() {
+    return LIST.slice().sort(function (a, b) { return avgOf(b) - avgOf(a); });
+  }
+
+  // 名次按「全班」算，不受搜索影响：筛出第 1 名，他仍然显示第 1 名，不会变成"筛选结果第 1 个"
+  function rankMap() {
+    var m = {};
+    rankedAll().forEach(function (s, i) { m[s.id] = i + 1; });
+    return m;
+  }
+
+  function filteredRows() {
+    var rows = rankedAll();
+    var kw = FILTER.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter(function (s) {
+      return s.id.toLowerCase().indexOf(kw) >= 0 ||
+             s.name.toLowerCase().indexOf(kw) >= 0;
+    });
+  }
 
   // ---------- 头像 ----------
   var COLORS = ['#93c5fd', '#fca5a5', '#86efac', '#fcd34d', '#c4b5fd', '#f9a8d4'];
@@ -282,7 +360,7 @@
   // ---------- 整页渲染 ----------
   function render() {
     var N = SUBS.length;
-    var ranked = LIST.slice().sort(function (a, b) { return avgOf(b) - avgOf(a); });
+    var ranked = rankedAll();
 
     var classAvg = 0, topScore = -1, passCount = 0;
     LIST.forEach(function (s) {
@@ -326,6 +404,7 @@
         '</div></div>';
       box.innerHTML = html;
       bindForm();
+      qHint.textContent = '';
       return;
     }
 
@@ -376,6 +455,8 @@
     html += '</div>';
 
     // 明细表
+    var rows = filteredRows();
+    var rk = rankMap();
     html += '<div class="panel"><h2>成绩明细（按平均分排序）</h2>' +
       '<p class="hint">' + (apiMode
         ? '点每行末尾的「照片」按钮可直接选图上传（jpg/png，≤3MB）'
@@ -387,10 +468,16 @@
     if (apiMode) html += '<th style="width:172px">操作</th>';
     html += '</tr></thead><tbody>';
 
-    ranked.forEach(function (s, i) {
-      var cls = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : '';
+    if (!rows.length) {
+      html += '<tr><td colspan="' + (5 + N + (apiMode ? 1 : 0)) +
+        '" class="empty-cell">没有匹配「' + FILTER + '」的学生</td></tr>';
+    }
+
+    rows.forEach(function (s) {
+      var pos = rk[s.id];
+      var cls = pos === 1 ? 'r1' : pos === 2 ? 'r2' : pos === 3 ? 'r3' : '';
       html += '<tr>' +
-        '<td><span class="rank-badge ' + cls + '">' + (i + 1) + '</span></td>' +
+        '<td><span class="rank-badge ' + cls + '">' + pos + '</span></td>' +
         '<td>' + avatarHtml(s.id, s.name, 34) + '</td>' +
         '<td>' + s.id + '</td><td>' + s.name + '</td>';
       s.scores.forEach(function (v) { html += '<td class="num">' + v + '</td>'; });
@@ -424,6 +511,11 @@
     box.innerHTML = html;
     bindAvatars(box);
     setupTabs();
+
+    // 搜索提示：让用户清楚「筛的是表格，不是整页统计」
+    qHint.textContent = FILTER.trim()
+      ? '明细表筛出 ' + rows.length + ' / ' + LIST.length + ' 人（统计卡片仍按全班算）'
+      : '';
     bindForm();
   }
 
@@ -564,7 +656,7 @@
     statusBox.innerHTML = (live
       ? '<span class="status live"><span class="dot"></span>已连接后端 · 数据可实时读写</span>'
       : '<span class="status readonly"><span class="dot"></span>静态数据 · 只读（启动后端后可编辑）</span>') +
-      '<span class="build-tag">页面版本 2026-10-24b · 含照片上传</span>';
+      '<span class="build-tag">页面版本 2026-10-24c · 搜索 / 导出 / 照片上传</span>';
   }
 
   // ---------- 启动：先试后端，失败就退回静态数据 ----------

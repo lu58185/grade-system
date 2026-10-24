@@ -19,6 +19,7 @@
 import json
 import os
 import posixpath
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote
 
@@ -31,6 +32,10 @@ DATA_FILE = os.path.join(BASE_DIR, "students.txt")
 SUBJECTS = ["数学", "英语", "C++"]
 # 默认 8000；设置环境变量 PORT 可以换端口（比如 8000 被别的程序占用时）
 PORT = int(os.environ.get("PORT", "8000"))
+
+# 服务是多线程的：两个请求可能同时读-改-写 students.txt，
+# 不加锁就会互相覆盖（A 读到旧列表，B 也读到旧列表，各自写完，后写的把先写的吞掉）。
+DATA_LOCK = threading.Lock()
 
 
 # ---------- 数据读写 ----------
@@ -54,11 +59,44 @@ def load_students():
 
 
 def save_students(students):
-    """把整个列表写回 students.txt，格式和 C++ 程序完全一致。"""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    """把整个列表写回 students.txt，格式和 C++ 程序完全一致。
+
+    先写临时文件再 os.replace 原子替换：万一写到一半断电/崩溃，
+    原来的 students.txt 还是完整的，不会变成半截文件把所有数据弄丢。
+    """
+    tmp = DATA_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         for s in students:
             scores = " ".join(format_num(v) for v in s["scores"])
             f.write(f'{s["id"]} {s["name"]} {scores}\n')
+    os.replace(tmp, DATA_FILE)
+
+
+def parse_scores(raw):
+    """把请求里的成绩清洗成 float 列表；不合法就抛 ValueError，消息直接给用户看。
+
+    这一步是「不信任客户端」的落地：浏览器可以随便伪造请求，
+    分数是不是数字、在不在 0~100、个数对不对，全得服务端自己再查一遍。
+    """
+    if not isinstance(raw, list) or len(raw) != len(SUBJECTS):
+        raise ValueError(f"成绩必须是 {len(SUBJECTS)} 个数字")
+
+    result = []
+    for x in raw:
+        # 布尔值在 Python 里是 int 的子类（True == 1），要单独挡掉
+        if isinstance(x, bool) or not isinstance(x, (int, float, str)):
+            raise ValueError("成绩必须是数字")
+        try:
+            v = float(x)
+        except (TypeError, ValueError):
+            raise ValueError("成绩必须是数字")
+        # NaN / 无穷大是 float() 接受的，但存进文件会把后续计算全毁掉
+        if v != v or v in (float("inf"), float("-inf")):
+            raise ValueError("成绩必须是有效数字")
+        if v < 0 or v > 100:
+            raise ValueError(f"成绩必须在 0 到 100 之间，收到 {format_num(v)}")
+        result.append(v)
+    return result
 
 
 def format_num(v):
@@ -67,6 +105,19 @@ def format_num(v):
 
 
 class Handler(BaseHTTPRequestHandler):
+
+    # ---------- 兜底：任何没预料到的异常都变成 JSON 500 ----------
+    def handle_one_request(self):
+        # 不做这层兜底的话，一个没处理的异常会让连接被直接掐断，
+        # 浏览器只看到 "Failed to fetch"，前端拿不到任何错误信息。
+        try:
+            super().handle_one_request()
+        except Exception as e:
+            try:
+                self.err(500, f"服务器内部错误：{e}")
+            except Exception:
+                pass
+
 
     # ---------- 工具方法 ----------
     def send_json(self, obj, code=200):
@@ -172,22 +223,30 @@ class Handler(BaseHTTPRequestHandler):
 
         sid = str(body.get("id", "")).strip()
         name = str(body.get("name", "")).strip()
-        scores = body.get("scores", [])
 
+        # 数据文件是「空格分隔」的纯文本，学号或姓名里带空格会把一行的列数打乱，
+        # 整条记录下次就读不出来了 —— 所以在入口就挡掉。
         if not sid or not name:
             self.err(400, "学号和姓名不能为空")
             return
-        if len(scores) != len(SUBJECTS):
-            self.err(400, f"成绩必须是 {len(SUBJECTS)} 个数字")
+        if any(ch.isspace() for ch in sid) or any(ch.isspace() for ch in name):
+            self.err(400, "学号和姓名里不能有空格")
             return
 
-        students = load_students()
-        if any(s["id"] == sid for s in students):
-            self.err(409, f"学号 {sid} 已存在")
+        try:
+            scores = parse_scores(body.get("scores", []))
+        except ValueError as e:
+            self.err(400, str(e))
             return
 
-        students.append({"id": sid, "name": name, "scores": [float(x) for x in scores]})
-        save_students(students)
+        with DATA_LOCK:
+            students = load_students()
+            if any(s["id"] == sid for s in students):
+                self.err(409, f"学号 {sid} 已存在")
+                return
+
+            students.append({"id": sid, "name": name, "scores": scores})
+            save_students(students)
         self.quiet_log()
         self.send_json({"ok": True, "students": students}, 201)
 
@@ -250,22 +309,32 @@ class Handler(BaseHTTPRequestHandler):
             self.err(400, "请求体不是合法 JSON")
             return
 
-        students = load_students()
-        target = next((s for s in students if s["id"] == sid), None)
-        if target is None:
-            self.err(404, f"找不到学号 {sid}")
+        new_name = str(body["name"]).strip() if "name" in body else ""
+        if new_name and any(ch.isspace() for ch in new_name):
+            self.err(400, "姓名里不能有空格")
             return
 
-        if "name" in body and str(body["name"]).strip():
-            target["name"] = str(body["name"]).strip()
+        new_scores = None
         if "scores" in body:
-            scores = body["scores"]
-            if len(scores) != len(SUBJECTS):
-                self.err(400, f"成绩必须是 {len(SUBJECTS)} 个数字")
+            try:
+                new_scores = parse_scores(body["scores"])
+            except ValueError as e:
+                self.err(400, str(e))
                 return
-            target["scores"] = [float(x) for x in scores]
 
-        save_students(students)
+        with DATA_LOCK:
+            students = load_students()
+            target = next((s for s in students if s["id"] == sid), None)
+            if target is None:
+                self.err(404, f"找不到学号 {sid}")
+                return
+
+            if new_name:
+                target["name"] = new_name
+            if new_scores is not None:
+                target["scores"] = new_scores
+
+            save_students(students)
         self.quiet_log()
         self.send_json({"ok": True, "students": students})
 
@@ -278,14 +347,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         sid = unquote(path[len(prefix):])
-        students = load_students()
-        remain = [s for s in students if s["id"] != sid]
+        with DATA_LOCK:
+            students = load_students()
+            remain = [s for s in students if s["id"] != sid]
 
-        if len(remain) == len(students):
-            self.err(404, f"找不到学号 {sid}")
-            return
+            if len(remain) == len(students):
+                self.err(404, f"找不到学号 {sid}")
+                return
 
-        save_students(remain)
+            save_students(remain)
         self.quiet_log()
         self.send_json({"ok": True, "students": remain})
 
