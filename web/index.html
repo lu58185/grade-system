@@ -102,6 +102,39 @@
   }
   img.avatar.ok { opacity: 1; }
 
+  /* ---------- 科目切换标签 ---------- */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    border: 1px solid #e5e7eb; background: #fff; color: #4b5563;
+    padding: 6px 16px; border-radius: 8px; font-size: 13px;
+    cursor: pointer; font-family: inherit; transition: all .15s ease;
+  }
+  .tab:hover { background: #f9fafb; border-color: #d1d5db; }
+  .tab.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+  /* ---------- 单科排名每一行 ---------- */
+  .sub-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .sub-rank-no { width: 24px; font-size: 12px; color: #9ca3af; text-align: right; }
+  .sub-name { width: 66px; font-size: 13px; color: #374151; }
+  .sub-track { flex: 1; height: 16px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+  .sub-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #93c5fd, #3b82f6); }
+  .sub-score {
+    width: 40px; text-align: right; font-size: 13px; font-weight: 600;
+    color: #111827; font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- 等级分布 ---------- */
+  .dist-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .dist-label { width: 96px; font-size: 13px; color: #374151; text-align: right; flex-shrink: 0; }
+  .dist-track { flex: 1; height: 20px; background: #f3f4f6; border-radius: 5px; overflow: hidden; }
+  .dist-fill { height: 100%; border-radius: 5px; min-width: 2px; transition: width .5s ease; }
+  .dist-fill.g0 { background: linear-gradient(90deg, #6ee7b7, #10b981); }
+  .dist-fill.g1 { background: linear-gradient(90deg, #93c5fd, #3b82f6); }
+  .dist-fill.g2 { background: linear-gradient(90deg, #a5b4fc, #6366f1); }
+  .dist-fill.g3 { background: linear-gradient(90deg, #fcd34d, #f59e0b); }
+  .dist-fill.g4 { background: linear-gradient(90deg, #fca5a5, #ef4444); }
+  .dist-val { width: 92px; font-size: 12px; color: #6b7280; flex-shrink: 0; }
+
   .empty { text-align: center; padding: 40px 20px; color: #9ca3af; font-size: 14px; }
   .empty code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #4b5563; }
   .footer { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 8px; }
@@ -237,6 +270,41 @@
   });
   html += '</div></div>';
 
+  // ---------- 单科排名（点标签切换科目） ----------
+  html += '<div class="panel"><h2>单科排名</h2>' +
+    '<p class="hint">点上面的科目切换，看这一科谁最高</p>' +
+    '<div class="tabs" id="sub-tabs">';
+  SUBJECTS.forEach(function (nm, i) {
+    html += '<button class="tab' + (i === 0 ? ' active' : '') + '" data-sub="' + i + '">' + nm + '</button>';
+  });
+  html += '</div><div id="sub-rank"></div></div>';
+
+  // ---------- 等级分布 ----------
+  // 按平均分划五档，条形长度 = 该档人数占总人数的百分比
+  var GRADE_LABELS = ['优秀 ≥90', '良好 80-89', '中等 70-79', '及格 60-69', '不及格 <60'];
+  var gradeBuckets = [0, 0, 0, 0, 0];
+  STUDENTS.forEach(function (s) {
+    var a = avgOf(s);
+    if (a >= 90) gradeBuckets[0]++;
+    else if (a >= 80) gradeBuckets[1]++;
+    else if (a >= 70) gradeBuckets[2]++;
+    else if (a >= 60) gradeBuckets[3]++;
+    else gradeBuckets[4]++;
+  });
+
+  html += '<div class="panel"><h2>等级分布</h2>' +
+    '<p class="hint">按平均分划分，条形长度对应人数占比</p>';
+  for (var g = 0; g < 5; g++) {
+    var cnt = gradeBuckets[g];
+    var pct = STUDENTS.length ? (cnt / STUDENTS.length * 100) : 0;
+    html += '<div class="dist-row">' +
+      '<div class="dist-label">' + GRADE_LABELS[g] + '</div>' +
+      '<div class="dist-track"><div class="dist-fill g' + g + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="dist-val">' + cnt + ' 人 · ' + fix1(pct) + '%</div>' +
+      '</div>';
+  }
+  html += '</div>';
+
   // ---------- 成绩明细表 ----------
   html += '<div class="panel"><h2>成绩明细（按平均分排序）</h2>' +
     '<p class="hint">照片放在 web/photos/ 文件夹，文件名用学号（如 2026001.jpg）</p>' +
@@ -273,6 +341,50 @@
 
   box.innerHTML = html;
   bindAvatars(box);          // 渲染完立刻处理照片加载
+
+  // ---------- 单科排名：渲染 + 点标签切换 ----------
+  // 生成某一科的排名列表（按这一科分数从高到低）
+  function buildSubRank(sub) {
+    var sorted = STUDENTS.slice().sort(function (a, b) {
+      return b.scores[sub] - a.scores[sub];
+    });
+    var out = '';
+    sorted.forEach(function (s, i) {
+      // 条形长度用 100 分做基准，这样不同科目之间也能横向比较
+      var w = Math.max(0, Math.min(100, s.scores[sub]));
+      out += '<div class="sub-row">' +
+        '<div class="sub-rank-no">' + (i + 1) + '</div>' +
+        avatarHtml(s.id, s.name, 28) +
+        '<div class="sub-name">' + s.name + '</div>' +
+        '<div class="sub-track"><div class="sub-fill" style="width:' + w + '%"></div></div>' +
+        '<div class="sub-score">' + s.scores[sub] + '</div>' +
+        '</div>';
+    });
+    return out;
+  }
+
+  var subBox = document.getElementById('sub-rank');
+  var tabs = box.querySelectorAll('#sub-tabs .tab');
+
+  function showSub(idx) {
+    if (!subBox) return;
+    subBox.innerHTML = buildSubRank(idx);
+    for (var t = 0; t < tabs.length; t++) {
+      if (t === idx) tabs[t].classList.add('active');
+      else tabs[t].classList.remove('active');
+    }
+    bindAvatars(subBox);      // 新生成的列表里也有头像，得重新绑定
+  }
+
+  for (var t = 0; t < tabs.length; t++) {
+    (function (btn) {
+      btn.addEventListener('click', function () {
+        showSub(parseInt(btn.getAttribute('data-sub'), 10));
+      });
+    })(tabs[t]);
+  }
+
+  showSub(0);                 // 默认显示第一科的排名
 })();
 </script>
 </body>
