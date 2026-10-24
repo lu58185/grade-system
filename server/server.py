@@ -1,0 +1,253 @@
+"""
+学生成绩管理系统 —— 后端服务（Python 标准库，零依赖）
+
+作用：把 students.txt 变成一个可以被网页读写的接口（API）。
+
+启动：双击 server/启动服务.bat  （或者在终端里 python server/server.py）
+然后浏览器打开：http://localhost:8000
+
+提供的接口：
+    GET    /api/students        取全部学生
+    POST   /api/students        添加一个学生
+    PUT    /api/students/<学号>  修改一个学生（姓名、成绩）
+    DELETE /api/students/<学号>  删除一个学生
+
+数据还是存在项目根目录的 students.txt 里，
+所以 C++ 程序和这个后端用的是同一份数据，可以互相对着改。
+"""
+
+import json
+import os
+import posixpath
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, unquote
+
+# ---------- 路径配置 ----------
+SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(SERVER_DIR)          # 项目根目录
+WEB_DIR = os.path.join(BASE_DIR, "web")         # 前端文件所在目录
+DATA_FILE = os.path.join(BASE_DIR, "students.txt")
+
+SUBJECTS = ["数学", "英语", "C++"]
+PORT = 8000
+
+
+# ---------- 数据读写 ----------
+def load_students():
+    """从 students.txt 读出所有学生，返回列表。"""
+    result = []
+    if not os.path.exists(DATA_FILE):
+        return result
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) != 2 + len(SUBJECTS):
+                continue                      # 格式不对的行直接跳过
+            sid, name = parts[0], parts[1]
+            try:
+                scores = [float(x) for x in parts[2:]]
+            except ValueError:
+                continue
+            result.append({"id": sid, "name": name, "scores": scores})
+    return result
+
+
+def save_students(students):
+    """把整个列表写回 students.txt，格式和 C++ 程序完全一致。"""
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        for s in students:
+            scores = " ".join(format_num(v) for v in s["scores"])
+            f.write(f'{s["id"]} {s["name"]} {scores}\n')
+
+
+def format_num(v):
+    """成绩是整数就不要写成 88.0，保持和 C++ 输出一致。"""
+    return str(int(v)) if float(v) == int(v) else str(v)
+
+
+class Handler(BaseHTTPRequestHandler):
+
+    # ---------- 工具方法 ----------
+    def send_json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def read_json(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0:
+            return None
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None
+
+    def err(self, code, msg):
+        self.send_json({"error": msg}, code)
+
+    def quiet_log(self):
+        # 默认的日志太吵，只打一行简短的
+        print(f"  {self.command} {self.path}")
+
+    # ---------- GET：取数据 / 发静态文件 ----------
+    def do_GET(self):
+        path = urlparse(self.path).path
+
+        if path == "/api/students":
+            self.quiet_log()
+            self.send_json({"subjects": SUBJECTS, "students": load_students()})
+            return
+
+        if path.startswith("/api/"):
+            self.err(404, "接口不存在")
+            return
+
+        self.serve_static(path)
+
+    def serve_static(self, path):
+        # 默认打开首页
+        if path == "/" or path == "":
+            path = "/index.html"
+
+        # 防止用 ../../ 跳出 web 目录读别的文件
+        safe = posixpath.normpath(unquote(path)).lstrip("/")
+        full = os.path.join(WEB_DIR, safe)
+        if not os.path.abspath(full).startswith(os.path.abspath(WEB_DIR)):
+            self.err(403, "禁止访问")
+            return
+        if not os.path.isfile(full):
+            self.err(404, "文件不存在")
+            return
+
+        ext = os.path.splitext(full)[1].lower()
+        types = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".txt": "text/plain; charset=utf-8",
+            ".ico": "image/x-icon",
+        }
+        ctype = types.get(ext, "application/octet-stream")
+
+        with open(full, "rb") as f:
+            data = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    # ---------- POST：添加 ----------
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path != "/api/students":
+            self.err(404, "接口不存在")
+            return
+
+        body = self.read_json()
+        if not body:
+            self.err(400, "请求体不是合法 JSON")
+            return
+
+        sid = str(body.get("id", "")).strip()
+        name = str(body.get("name", "")).strip()
+        scores = body.get("scores", [])
+
+        if not sid or not name:
+            self.err(400, "学号和姓名不能为空")
+            return
+        if len(scores) != len(SUBJECTS):
+            self.err(400, f"成绩必须是 {len(SUBJECTS)} 个数字")
+            return
+
+        students = load_students()
+        if any(s["id"] == sid for s in students):
+            self.err(409, f"学号 {sid} 已存在")
+            return
+
+        students.append({"id": sid, "name": name, "scores": [float(x) for x in scores]})
+        save_students(students)
+        self.quiet_log()
+        self.send_json({"ok": True, "students": students}, 201)
+
+    # ---------- PUT：修改 ----------
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        prefix = "/api/students/"
+        if not path.startswith(prefix):
+            self.err(404, "接口不存在")
+            return
+
+        sid = unquote(path[len(prefix):])
+        body = self.read_json()
+        if not body:
+            self.err(400, "请求体不是合法 JSON")
+            return
+
+        students = load_students()
+        target = next((s for s in students if s["id"] == sid), None)
+        if target is None:
+            self.err(404, f"找不到学号 {sid}")
+            return
+
+        if "name" in body and str(body["name"]).strip():
+            target["name"] = str(body["name"]).strip()
+        if "scores" in body:
+            scores = body["scores"]
+            if len(scores) != len(SUBJECTS):
+                self.err(400, f"成绩必须是 {len(SUBJECTS)} 个数字")
+                return
+            target["scores"] = [float(x) for x in scores]
+
+        save_students(students)
+        self.quiet_log()
+        self.send_json({"ok": True, "students": students})
+
+    # ---------- DELETE：删除 ----------
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        prefix = "/api/students/"
+        if not path.startswith(prefix):
+            self.err(404, "接口不存在")
+            return
+
+        sid = unquote(path[len(prefix):])
+        students = load_students()
+        remain = [s for s in students if s["id"] != sid]
+
+        if len(remain) == len(students):
+            self.err(404, f"找不到学号 {sid}")
+            return
+
+        save_students(remain)
+        self.quiet_log()
+        self.send_json({"ok": True, "students": remain})
+
+
+def main():
+    print("=" * 46)
+    print("  学生成绩管理系统 · 后端服务")
+    print("=" * 46)
+    print(f"  数据文件：{DATA_FILE}")
+    print(f"  网页目录：{WEB_DIR}")
+    print(f"  打开地址：http://localhost:{PORT}")
+    print("  停止服务：按 Ctrl + C")
+    print("=" * 46)
+
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n服务已停止。")
+
+
+if __name__ == "__main__":
+    main()
