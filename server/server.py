@@ -143,6 +143,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        # 页面和数据必须每次回服务器确认，否则改了代码刷新也看不到效果；
+        # 图片可以放心缓存，前端上传后靠 ?v=时间戳主动换地址。
+        if ext in (".html", ".js", ".css", ".json"):
+            self.send_header("Cache-Control", "no-cache, must-revalidate")
+        else:
+            self.send_header("Cache-Control", "public, max-age=86400")
         self.end_headers()
         self.wfile.write(data)
 

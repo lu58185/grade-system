@@ -22,6 +22,8 @@
   .status.live { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
   .status.readonly { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  /* 页面版本标记：刷新后能一眼看出浏览器拿到的是不是最新页面，不受缓存欺骗 */
+  .build-tag { font-size: 11px; color: #b0b7c3; margin-left: 10px; }
 
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
   .card {
@@ -375,7 +377,9 @@
 
     // 明细表
     html += '<div class="panel"><h2>成绩明细（按平均分排序）</h2>' +
-      '<p class="hint">照片放在 web/photos/ 文件夹，文件名用学号（如 2026001.jpg）</p>' +
+      '<p class="hint">' + (apiMode
+        ? '点每行末尾的「照片」按钮可直接选图上传（jpg/png，≤3MB）'
+        : '照片放在 web/photos/ 文件夹，文件名用学号（如 2026001.jpg）') + '</p>' +
       '<table><thead><tr>' +
       '<th style="width:56px">名次</th><th style="width:52px">照片</th><th>学号</th><th>姓名</th>';
     SUBS.forEach(function (nm) { html += '<th class="num">' + nm + '</th>'; });
@@ -557,9 +561,10 @@
   });
 
   function setStatus(live) {
-    statusBox.innerHTML = live
+    statusBox.innerHTML = (live
       ? '<span class="status live"><span class="dot"></span>已连接后端 · 数据可实时读写</span>'
-      : '<span class="status readonly"><span class="dot"></span>静态数据 · 只读（启动后端后可编辑）</span>';
+      : '<span class="status readonly"><span class="dot"></span>静态数据 · 只读（启动后端后可编辑）</span>') +
+      '<span class="build-tag">页面版本 2026-10-24b · 含照片上传</span>';
   }
 
   // ---------- 启动：先试后端，失败就退回静态数据 ----------
